@@ -3,7 +3,7 @@ import socket
 import psutil
 
 from src.formatting import gb, mb
-from src.history import get_history, save_metric_sample
+from src.history import get_history
 from src.host import get_primary_ip, get_uptime
 from src.listeners import get_public_listening_ports
 from src.processes import get_top_processes
@@ -26,15 +26,6 @@ def get_dashboard_data():
     net_io = psutil.net_io_counters()
     network_usage = get_network_usage(net_io)
     disk_usage = get_disk_usage(disk_io)
-    save_metric_sample(
-        cpu_usage,
-        memory.percent,
-        network_usage["total_rate"],
-        network_usage["rx_rate"],
-        network_usage["tx_rate"],
-        disk_usage["read_rate"],
-        disk_usage["write_rate"],
-    )
     history = get_history()
 
     return {

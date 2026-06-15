@@ -1,10 +1,15 @@
 import socket
+import os
 
 from flask import Flask, render_template
 
 from src.dashboard import get_dashboard_data
+from src.sampler import start_background_sampler
 
 app = Flask(__name__)
+
+if __name__ != "__main__" or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+    start_background_sampler()
 
 
 @app.route("/")
@@ -18,6 +23,9 @@ def stats():
 
 
 if __name__ == "__main__":
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        start_background_sampler()
+
     app.run(
         host="0.0.0.0",
         port=5000,

@@ -59,7 +59,7 @@ SERVICES_TO_TRACK = ["xmr"]
 Update that list with the systemd unit names you want displayed.
 
 Metric history is stored in a local SQLite database at `data/stats.sqlite3`.
-The app keeps one sample every 10 seconds and deletes samples older than one day.
+The app runs a background sampler while the server process is running, keeps one sample every 10 seconds, and deletes samples older than one day.
 
 The SQLite database is ignored by Git so runtime metric data is not committed.
 
