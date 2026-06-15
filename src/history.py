@@ -4,13 +4,13 @@ import time
 from src.config import (
     DATA_DIR,
     DB_PATH,
-    HISTORY_LIMIT,
-    HISTORY_SAMPLE_INTERVAL,
-    RETENTION_SECONDS,
+    HISTORY_POINT_COUNT,
+    HISTORY_RETENTION_SECONDS,
+    HISTORY_SAMPLE_INTERVAL_SECONDS,
 )
-from src.formatting import bytes_per_second, format_percent
+from src.formatting import format_bytes_per_second, format_percent
 
-LAST_HISTORY_BUCKET = None
+LAST_SAVED_SAMPLE_TIMESTAMP = None
 
 
 def init_db():
@@ -53,18 +53,21 @@ def init_db():
 
 
 def prune_old_samples():
-    cutoff = int(time.time()) - RETENTION_SECONDS
+    cutoff = int(time.time()) - HISTORY_RETENTION_SECONDS
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("DELETE FROM metric_samples WHERE sampled_at < ?", (cutoff,))
 
 
-def sample_bucket(timestamp=None):
+def sample_timestamp(timestamp=None):
     timestamp = time.time() if timestamp is None else timestamp
-    return int(timestamp // HISTORY_SAMPLE_INTERVAL) * HISTORY_SAMPLE_INTERVAL
+    return (
+        int(timestamp // HISTORY_SAMPLE_INTERVAL_SECONDS)
+        * HISTORY_SAMPLE_INTERVAL_SECONDS
+    )
 
 
-def save_metric_sample(
+def save_history_sample(
     cpu_usage,
     memory_usage,
     network_bps,
@@ -73,10 +76,10 @@ def save_metric_sample(
     disk_read_bps,
     disk_write_bps,
 ):
-    global LAST_HISTORY_BUCKET
+    global LAST_SAVED_SAMPLE_TIMESTAMP
 
-    bucket = sample_bucket()
-    if LAST_HISTORY_BUCKET == bucket:
+    sampled_at = sample_timestamp()
+    if LAST_SAVED_SAMPLE_TIMESTAMP == sampled_at:
         return
 
     init_db()
@@ -97,7 +100,7 @@ def save_metric_sample(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                bucket,
+                sampled_at,
                 cpu_usage,
                 memory_usage,
                 network_bps,
@@ -108,7 +111,7 @@ def save_metric_sample(
             ),
         )
 
-    LAST_HISTORY_BUCKET = bucket
+    LAST_SAVED_SAMPLE_TIMESTAMP = sampled_at
     prune_old_samples()
 
 
@@ -128,17 +131,18 @@ def graph_points(values, max_value=None, label_formatter=None):
     ]
 
 
-def history_buckets():
-    current_bucket = sample_bucket()
+def history_sample_timestamps():
+    current_sample = sample_timestamp()
     return [
-        current_bucket - ((HISTORY_LIMIT - 1 - index) * HISTORY_SAMPLE_INTERVAL)
-        for index in range(HISTORY_LIMIT)
+        current_sample
+        - ((HISTORY_POINT_COUNT - 1 - index) * HISTORY_SAMPLE_INTERVAL_SECONDS)
+        for index in range(HISTORY_POINT_COUNT)
     ]
 
 
 def get_metric_history(column, max_value=None, label_formatter=None):
     init_db()
-    buckets = history_buckets()
+    sample_timestamps = history_sample_timestamps()
 
     with sqlite3.connect(DB_PATH) as conn:
         rows = conn.execute(
@@ -148,13 +152,13 @@ def get_metric_history(column, max_value=None, label_formatter=None):
             WHERE sampled_at >= ?
             ORDER BY sampled_at
             """,
-            (buckets[0],),
+            (sample_timestamps[0],),
         ).fetchall()
 
-    values_by_bucket = {sampled_at: value for sampled_at, value in rows}
+    values_by_sample = {sampled_at: value for sampled_at, value in rows}
     values = [
-        (values_by_bucket.get(bucket, 0), bucket in values_by_bucket)
-        for bucket in buckets
+        (values_by_sample.get(sampled_at, 0), sampled_at in values_by_sample)
+        for sampled_at in sample_timestamps
     ]
 
     return graph_points(
@@ -166,7 +170,7 @@ def get_metric_history(column, max_value=None, label_formatter=None):
 
 def get_network_history():
     init_db()
-    buckets = history_buckets()
+    sample_timestamps = history_sample_timestamps()
 
     with sqlite3.connect(DB_PATH) as conn:
         rows = conn.execute(
@@ -176,39 +180,43 @@ def get_network_history():
             WHERE sampled_at >= ?
             ORDER BY sampled_at
             """,
-            (buckets[0],),
+            (sample_timestamps[0],),
         ).fetchall()
 
-    values_by_bucket = {
+    values_by_sample = {
         sampled_at: (rx_bps, tx_bps)
         for sampled_at, rx_bps, tx_bps in rows
     }
     populated_values = [
         value
-        for bucket in buckets
-        if bucket in values_by_bucket
-        for value in values_by_bucket[bucket]
+        for sampled_at in sample_timestamps
+        if sampled_at in values_by_sample
+        for value in values_by_sample[sampled_at]
     ]
     scale = max(populated_values, default=0) or 1
 
     points = []
-    for bucket in buckets:
-        rx_bps, tx_bps = values_by_bucket.get(bucket, (0, 0))
-        has_data = bucket in values_by_bucket
+    for sampled_at in sample_timestamps:
+        rx_bps, tx_bps = values_by_sample.get(sampled_at, (0, 0))
+        has_data = sampled_at in values_by_sample
         points.append(
             {
                 "rx_height": max(4, round((rx_bps / scale) * 100)) if has_data else 0,
                 "tx_height": max(4, round((tx_bps / scale) * 100)) if has_data else 0,
                 "has_data": has_data,
-                "rx_label": bytes_per_second(rx_bps) if has_data else "No data",
-                "tx_label": bytes_per_second(tx_bps) if has_data else "No data",
+                "rx_label": (
+                    format_bytes_per_second(rx_bps) if has_data else "No data"
+                ),
+                "tx_label": (
+                    format_bytes_per_second(tx_bps) if has_data else "No data"
+                ),
             }
         )
 
     return points
 
 
-def get_history():
+def get_chart_history():
     return {
         "cpu_history": get_metric_history(
             "cpu_percent",

@@ -3,7 +3,7 @@ import psutil
 from src.formatting import format_bytes
 
 
-def get_disks():
+def get_mounted_disks():
     skip_fs = {
         "tmpfs",
         "devtmpfs",
@@ -37,7 +37,9 @@ def get_disks():
         try:
             usage = psutil.disk_usage(part.mountpoint)
             seen_devices.add(part.device)
-            used_percent = round((usage.used / usage.total) * 100, 1) if usage.total else 0
+            used_percent = (
+                round((usage.used / usage.total) * 100, 1) if usage.total else 0
+            )
 
             disks.append(
                 {

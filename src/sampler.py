@@ -3,9 +3,9 @@ import time
 
 import psutil
 
-from src.config import HISTORY_SAMPLE_INTERVAL
-from src.history import save_metric_sample
-from src.rates import get_disk_usage, get_network_usage
+from src.config import HISTORY_SAMPLE_INTERVAL_SECONDS
+from src.history import save_history_sample
+from src.rates import get_disk_throughput, get_network_throughput
 
 SAMPLER_THREAD = None
 
@@ -16,17 +16,17 @@ def collect_metric_sample():
     disk_io = psutil.disk_io_counters()
     net_io = psutil.net_io_counters()
 
-    network_usage = get_network_usage(net_io)
-    disk_usage = get_disk_usage(disk_io)
+    network_throughput = get_network_throughput(net_io)
+    disk_throughput = get_disk_throughput(disk_io)
 
-    save_metric_sample(
+    save_history_sample(
         cpu_usage,
         memory.percent,
-        network_usage["total_rate"],
-        network_usage["rx_rate"],
-        network_usage["tx_rate"],
-        disk_usage["read_rate"],
-        disk_usage["write_rate"],
+        network_throughput["total_rate"],
+        network_throughput["rx_rate"],
+        network_throughput["tx_rate"],
+        disk_throughput["read_rate"],
+        disk_throughput["write_rate"],
     )
 
 
@@ -37,7 +37,7 @@ def sampler_loop():
         except Exception:
             pass
 
-        time.sleep(HISTORY_SAMPLE_INTERVAL)
+        time.sleep(HISTORY_SAMPLE_INTERVAL_SECONDS)
 
 
 def start_background_sampler():

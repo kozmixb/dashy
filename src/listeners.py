@@ -15,7 +15,7 @@ def is_public_ipv4(address):
     return ip_address.version == 4 and not ip_address.is_loopback
 
 
-def get_public_listening_ports():
+def get_public_listeners():
     listeners = []
     seen = set()
 

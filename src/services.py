@@ -2,7 +2,7 @@ import subprocess
 from datetime import datetime
 
 from src.config import SERVICES_TO_TRACK
-from src.formatting import format_bytes, format_nsec
+from src.formatting import format_bytes
 
 
 def parse_systemd_value(value):
@@ -33,7 +33,10 @@ def format_service_uptime(active_since):
         return "n/a"
 
     try:
-        started_at = datetime.strptime(active_since.rsplit(" ", 1)[0], "%a %Y-%m-%d %H:%M:%S")
+        started_at = datetime.strptime(
+            active_since.rsplit(" ", 1)[0],
+            "%a %Y-%m-%d %H:%M:%S",
+        )
     except ValueError:
         return "n/a"
 
@@ -72,7 +75,6 @@ def get_service_status(service_name):
             "show",
             service_name,
             "--property=UnitFileState",
-            "--property=CPUUsageNSec",
             "--property=MemoryPeak",
             "--property=MemoryCurrent",
             "--property=ActiveEnterTimestamp",
@@ -84,7 +86,6 @@ def get_service_status(service_name):
     properties = parse_systemd_show(show_result.stdout)
     memory_peak = parse_systemd_value(properties.get("MemoryPeak", ""))
     memory_current = parse_systemd_value(properties.get("MemoryCurrent", ""))
-    cpu_usage_nsec = parse_systemd_value(properties.get("CPUUsageNSec", ""))
     enabled_state = properties.get("UnitFileState") or "unknown"
     active_since = properties.get("ActiveEnterTimestamp") or "n/a"
 
@@ -96,12 +97,11 @@ def get_service_status(service_name):
         "is_enabled": enabled_state == "enabled",
         "memory_peak": format_bytes(memory_peak),
         "memory_current": format_bytes(memory_current),
-        "cpu_time": format_nsec(cpu_usage_nsec),
         "active_since": active_since,
         "uptime": format_service_uptime(active_since),
         "logs": logs if logs else "No logs available.",
     }
 
 
-def get_services_status():
+def get_tracked_services_status():
     return [get_service_status(svc) for svc in SERVICES_TO_TRACK]

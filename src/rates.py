@@ -1,14 +1,14 @@
 import threading
 import time
 
-from src.formatting import bytes_per_second
+from src.formatting import format_bytes_per_second
 
 LAST_NET_SAMPLE = None
 LAST_DISK_SAMPLE = None
 RATE_LOCK = threading.Lock()
 
 
-def get_network_usage(net_io):
+def get_network_throughput(net_io):
     global LAST_NET_SAMPLE
 
     with RATE_LOCK:
@@ -21,9 +21,9 @@ def get_network_usage(net_io):
                 "rx_rate": 0,
                 "tx_rate": 0,
                 "total_rate": 0,
-                "rx_rate_label": bytes_per_second(0),
-                "tx_rate_label": bytes_per_second(0),
-                "total_rate_label": bytes_per_second(0),
+                "rx_rate_label": format_bytes_per_second(0),
+                "tx_rate_label": format_bytes_per_second(0),
+                "total_rate_label": format_bytes_per_second(0),
             }
 
         last_time, last_recv, last_sent = LAST_NET_SAMPLE
@@ -38,13 +38,13 @@ def get_network_usage(net_io):
         "rx_rate": rx_rate,
         "tx_rate": tx_rate,
         "total_rate": total_rate,
-        "rx_rate_label": bytes_per_second(rx_rate),
-        "tx_rate_label": bytes_per_second(tx_rate),
-        "total_rate_label": bytes_per_second(total_rate),
+        "rx_rate_label": format_bytes_per_second(rx_rate),
+        "tx_rate_label": format_bytes_per_second(tx_rate),
+        "total_rate_label": format_bytes_per_second(total_rate),
     }
 
 
-def get_disk_usage(disk_io):
+def get_disk_throughput(disk_io):
     global LAST_DISK_SAMPLE
 
     with RATE_LOCK:
@@ -57,9 +57,9 @@ def get_disk_usage(disk_io):
                 "read_rate": 0,
                 "write_rate": 0,
                 "total_rate": 0,
-                "read_rate_label": bytes_per_second(0),
-                "write_rate_label": bytes_per_second(0),
-                "total_rate_label": bytes_per_second(0),
+                "read_rate_label": format_bytes_per_second(0),
+                "write_rate_label": format_bytes_per_second(0),
+                "total_rate_label": format_bytes_per_second(0),
             }
 
         last_time, last_read, last_write = LAST_DISK_SAMPLE
@@ -74,7 +74,7 @@ def get_disk_usage(disk_io):
         "read_rate": read_rate,
         "write_rate": write_rate,
         "total_rate": total_rate,
-        "read_rate_label": bytes_per_second(read_rate),
-        "write_rate_label": bytes_per_second(write_rate),
-        "total_rate_label": bytes_per_second(total_rate),
+        "read_rate_label": format_bytes_per_second(read_rate),
+        "write_rate_label": format_bytes_per_second(write_rate),
+        "total_rate_label": format_bytes_per_second(total_rate),
     }
