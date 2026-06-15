@@ -39,7 +39,7 @@ pip install -r requirements.txt
 Run the app:
 
 ```bash
-python app.py
+python3 app.py
 ```
 
 Open:
@@ -47,6 +47,10 @@ Open:
 ```text
 http://localhost:5000
 ```
+
+Direct `python3 app.py` listens on `0.0.0.0:5000` by default so it can be opened
+from another machine on the same network. Set `STATS_DASHBOARD_HOST` and
+`STATS_DASHBOARD_PORT` if you need a different bind address.
 
 ## Configuration
 

@@ -1,7 +1,7 @@
 import subprocess
 from datetime import datetime
 
-from src.config import SERVICES_TO_TRACK
+from src.config import SERVICE_COMMAND_TIMEOUT_SECONDS, SERVICES_TO_TRACK
 from src.formatting import format_bytes
 
 
@@ -26,6 +26,19 @@ def parse_systemd_show(output):
         properties[key] = value
 
     return properties
+
+
+def run_service_command(command):
+    try:
+        return subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=SERVICE_COMMAND_TIMEOUT_SECONDS,
+            errors="replace",
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
 
 
 def format_service_uptime(active_since):
@@ -53,23 +66,15 @@ def format_service_uptime(active_since):
 
 
 def get_service_status(service_name):
-    result = subprocess.run(
-        ["systemctl", "is-active", service_name],
-        capture_output=True,
-        text=True,
+    result = run_service_command(["systemctl", "is-active", service_name])
+    status = result.stdout.strip() if result else "unknown"
+
+    log_result = run_service_command(
+        ["journalctl", "-u", service_name, "-n", "5", "--no-pager"]
     )
+    logs = log_result.stdout.strip() if log_result else ""
 
-    status = result.stdout.strip()
-
-    log_result = subprocess.run(
-        ["journalctl", "-u", service_name, "-n", "5", "--no-pager"],
-        capture_output=True,
-        text=True,
-    )
-
-    logs = log_result.stdout.strip()
-
-    show_result = subprocess.run(
+    show_result = run_service_command(
         [
             "systemctl",
             "show",
@@ -79,11 +84,9 @@ def get_service_status(service_name):
             "--property=MemoryCurrent",
             "--property=ActiveEnterTimestamp",
             "--no-pager",
-        ],
-        capture_output=True,
-        text=True,
+        ]
     )
-    properties = parse_systemd_show(show_result.stdout)
+    properties = parse_systemd_show(show_result.stdout) if show_result else {}
     memory_peak = parse_systemd_value(properties.get("MemoryPeak", ""))
     memory_current = parse_systemd_value(properties.get("MemoryCurrent", ""))
     enabled_state = properties.get("UnitFileState") or "unknown"
