@@ -37,7 +37,7 @@ http://localhost:5000
 
 ## Configuration
 
-Tracked services are configured in `app.py`:
+Tracked services are configured in `src/config.py`:
 
 ```python
 SERVICES_TO_TRACK = ["xmr"]

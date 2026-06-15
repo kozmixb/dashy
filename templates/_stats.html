@@ -2,7 +2,10 @@
 <header class="flex flex-col gap-2 border-b border-white/10 pb-4 sm:flex-row sm:items-end sm:justify-between">
 <div>
 <h1 class="text-2xl font-semibold tracking-tight text-white">Stats for {{ hostname }}</h1>
-<p class="mt-1 text-sm text-zinc-400">Uptime {{ uptime }}</p>
+<div class="mt-1 flex flex-wrap gap-x-6 gap-y-1 text-sm text-zinc-400">
+<span><span class="text-zinc-500">Uptime</span> {{ uptime }}</span>
+<span><span class="text-zinc-500">IP</span> {{ primary_ip }}</span>
+</div>
 </div>
 <div class="flex items-center gap-2 text-xs text-zinc-400">
 <span class="h-2 w-2 rounded-full bg-emerald-400"></span>
@@ -30,12 +33,18 @@
 </div>
 <div class="mt-auto border-t border-white/10 pt-3">
 <div class="mb-2 flex items-center justify-between text-xs">
-<span class="text-zinc-500">CPU history, 1h</span>
+<span class="text-zinc-500">CPU history, 10m</span>
 <span class="font-mono text-zinc-400">{{ cpu_usage }}%</span>
 </div>
-<div class="flex h-20 items-end gap-px">
+<div class="grid h-28 grid-cols-[repeat(60,minmax(0,1fr))] items-end gap-px">
 {% for point in cpu_history %}
-<div class="flex-1 rounded-sm {{ 'bg-indigo-400/70' if point.has_data else 'bg-white/5' }}" style="height: {{ point.height }}%"></div>
+<div class="group relative {{ 'bg-indigo-400/70' if point.has_data else 'bg-white/5' }}" style="height: {{ point.height }}%">
+{% if point.has_data %}
+<div class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-white/10 bg-zinc-950 px-2 py-1 font-mono text-xs text-white shadow-xl group-hover:block">
+{{ point.label }}
+</div>
+{% endif %}
+</div>
 {% endfor %}
 </div>
 </div>
@@ -74,12 +83,18 @@
 
 <div class="mt-auto border-t border-white/10 pt-3">
 <div class="mb-2 flex items-center justify-between text-xs">
-<span class="text-zinc-500">Memory history, 1h</span>
+<span class="text-zinc-500">Memory history, 10m</span>
 <span class="font-mono text-zinc-400">{{ memory.percent }}%</span>
 </div>
-<div class="flex h-20 items-end gap-px">
+<div class="grid h-28 grid-cols-[repeat(60,minmax(0,1fr))] items-end gap-px">
 {% for point in memory_history %}
-<div class="flex-1 rounded-sm {{ 'bg-emerald-400/70' if point.has_data else 'bg-white/5' }}" style="height: {{ point.height }}%"></div>
+<div class="group relative {{ 'bg-emerald-400/70' if point.has_data else 'bg-white/5' }}" style="height: {{ point.height }}%">
+{% if point.has_data %}
+<div class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-white/10 bg-zinc-950 px-2 py-1 font-mono text-xs text-white shadow-xl group-hover:block">
+{{ point.label }}
+</div>
+{% endif %}
+</div>
 {% endfor %}
 </div>
 </div>
@@ -114,15 +129,20 @@
 </div>
 <div class="mt-auto border-t border-white/10 pt-3">
 <div class="mb-2 flex items-center justify-between text-xs">
-<span class="text-zinc-500">Network history, 1h</span>
+<span class="text-zinc-500">Network history, 10m</span>
 <span class="font-mono text-zinc-400"><span class="text-sky-300">RX</span> / <span class="text-violet-300">TX</span></span>
 </div>
-<div class="flex h-20 items-end gap-px">
+<div class="grid h-28 grid-cols-[repeat(60,minmax(0,1fr))] items-end gap-px">
 {% for point in network_history %}
-<div class="flex flex-1 items-end gap-px">
+<div class="group relative flex h-full items-end">
 {% if point.has_data %}
 <div class="flex-1 rounded-sm bg-sky-400/75" style="height: {{ point.rx_height }}%"></div>
 <div class="flex-1 rounded-sm bg-violet-400/75" style="height: {{ point.tx_height }}%"></div>
+<div class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-white/10 bg-zinc-950 px-2 py-1 font-mono text-xs text-white shadow-xl group-hover:block">
+<span class="text-sky-300">RX {{ point.rx_label }}</span>
+<span class="px-1 text-zinc-600">/</span>
+<span class="text-violet-300">TX {{ point.tx_label }}</span>
+</div>
 {% else %}
 <div class="h-0 flex-1 rounded-sm bg-white/5"></div>
 <div class="h-0 flex-1 rounded-sm bg-white/5"></div>
@@ -144,15 +164,23 @@
 <div>
 <dt class="text-xs uppercase text-zinc-500">Read</dt>
 <dd class="mt-1 font-mono text-xl text-white">{{ disk_read_rate }}</dd>
-<dd class="mt-1 text-xs text-zinc-500">{{ disk_read }} MB total</dd>
 </div>
 <div>
 <dt class="text-xs uppercase text-zinc-500">Write</dt>
 <dd class="mt-1 font-mono text-xl text-white">{{ disk_write_rate }}</dd>
-<dd class="mt-1 text-xs text-zinc-500">{{ disk_write }} MB total</dd>
 </div>
 </dl>
-<div class="border-t border-white/10 pt-2">
+<div class="grid grid-cols-2 gap-4 border-t border-white/10 pt-3 text-xs">
+<div>
+<span class="text-zinc-500">Total read</span>
+<p class="mt-1 font-mono text-zinc-300">{{ disk_read }} MB</p>
+</div>
+<div>
+<span class="text-zinc-500">Total write</span>
+<p class="mt-1 font-mono text-zinc-300">{{ disk_write }} MB</p>
+</div>
+</div>
+<div class="mt-auto border-t border-white/10 pt-3">
 <div class="mb-1.5 flex items-center justify-between text-xs">
 <span class="text-zinc-500">Mounted devices</span>
 <span class="text-zinc-500">{{ mounted_disks|length }}</span>
@@ -168,7 +196,7 @@
 <div class="h-1.5 overflow-hidden rounded-full bg-zinc-800">
 <div class="h-full rounded-full bg-amber-400" style="width: {{ disk.percent }}%"></div>
 </div>
-<p class="mt-1 text-xs text-zinc-500">{{ disk.percent }}% &middot; {{ disk.used }} / {{ disk.total }} GB &middot; {{ disk.free }} GB free</p>
+<p class="mt-1 text-xs text-zinc-500">{{ disk.percent }}% &middot; {{ disk.used }} / {{ disk.total }} &middot; {{ disk.free }} free</p>
 </div>
 </div>
 {% endfor %}
@@ -178,58 +206,98 @@
 </div>
 </section>
 
-<section class="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
-<div class="rounded-lg border border-white/10 bg-white/[0.03]">
+<section class="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+<div class="min-w-0 rounded-lg border border-white/10 bg-white/[0.03]">
 <div class="border-b border-white/10 px-4 py-3">
 <h2 class="text-sm font-medium text-white">Systemd Services</h2>
 </div>
 <div class="divide-y divide-white/10">
 {% for svc in services %}
 <div class="px-4 py-3">
-<div class="flex items-center justify-between gap-3">
+<div class="space-y-3">
+<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+<div class="min-w-0 truncate">
 <span class="font-mono text-sm text-white">{{ svc.name }}</span>
+</div>
+<div class="flex shrink-0 flex-wrap gap-2">
 {% if svc.is_active %}
 <span class="rounded-md bg-emerald-500/10 px-2 py-1 text-xs text-emerald-300">Active</span>
 {% else %}
 <span class="rounded-md bg-rose-500/10 px-2 py-1 text-xs text-rose-300">{{ svc.status }}</span>
 {% endif %}
+{% if svc.is_enabled %}
+<span class="rounded-md bg-sky-500/10 px-2 py-1 text-xs text-sky-300">Startup enabled</span>
+{% else %}
+<span class="rounded-md bg-zinc-500/10 px-2 py-1 text-xs text-zinc-300">Startup {{ svc.enabled_state }}</span>
+{% endif %}
 </div>
-<pre class="mt-3 max-h-[32rem] min-h-52 overflow-auto rounded-md bg-black/30 p-3 text-xs leading-relaxed text-zinc-400">{{ svc.logs }}</pre>
+</div>
+<dl class="grid grid-cols-1 gap-2 text-xs text-zinc-500 sm:grid-cols-4">
+<div>
+<dt class="uppercase">CPU time</dt>
+<dd class="mt-1 font-mono text-zinc-300">{{ svc.cpu_time }}</dd>
+</div>
+<div>
+<dt class="uppercase">Memory peak</dt>
+<dd class="mt-1 font-mono text-zinc-300">{{ svc.memory_peak }}</dd>
+</div>
+<div>
+<dt class="uppercase">Current memory</dt>
+<dd class="mt-1 font-mono text-zinc-300">{{ svc.memory_current }}</dd>
+</div>
+<div class="min-w-0">
+<dt class="uppercase">Active since</dt>
+<dd class="mt-1 whitespace-nowrap font-mono text-zinc-300">{{ svc.active_since }}</dd>
+</div>
+</dl>
+</div>
+<pre class="mt-3 block max-h-[32rem] min-h-52 w-full max-w-full overflow-auto rounded-md bg-black/30 p-3 text-xs leading-relaxed text-zinc-400">{{ svc.logs }}</pre>
 </div>
 {% endfor %}
 </div>
 </div>
 
-<div class="rounded-lg border border-white/10 bg-white/[0.03]">
+<div class="min-w-0 rounded-lg border border-white/10 bg-white/[0.03]">
 <div class="flex items-center justify-between border-b border-white/10 px-4 py-3">
 <h2 class="text-sm font-medium text-white">Top Processes</h2>
-<span class="text-xs text-zinc-500">CPU / MEM</span>
+<span class="text-xs text-zinc-500">Top 5</span>
 </div>
-<div class="divide-y divide-white/10">
+<ol class="divide-y divide-white/10">
 {% for process in top_processes %}
-<div class="px-4 py-3">
-<div class="flex items-start justify-between gap-3">
-<div class="min-w-0">
-<p class="truncate text-sm font-medium text-white">{{ process.name }}</p>
-<p class="mt-1 truncate text-xs text-zinc-500">PID {{ process.pid }} &middot; {{ process.username }}</p>
-</div>
-<div class="shrink-0 text-right font-mono text-xs">
-<p class="text-zinc-200">{{ process.cpu_percent }}%</p>
-<p class="mt-1 text-zinc-500">{{ process.memory_percent }}%</p>
-</div>
-</div>
-<div class="mt-2 grid grid-cols-[36px_1fr] items-center gap-2 text-xs">
+<li class="group relative grid grid-cols-[2rem_1fr_auto] items-center gap-2 px-4 py-2 text-sm">
+<span class="font-mono text-xs text-zinc-500">{{ loop.index }}</span>
+<span class="min-w-0 truncate font-medium text-white">{{ process.name }}</span>
+<span class="max-w-28 truncate text-xs text-zinc-500">{{ process.username }}</span>
+<div class="pointer-events-none absolute right-3 top-full z-30 mt-2 hidden w-64 rounded-md border border-white/10 bg-zinc-950 p-3 text-xs text-zinc-300 shadow-xl group-hover:block">
+<div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
 <span class="text-zinc-500">CPU</span>
-<div class="h-1.5 overflow-hidden rounded-full bg-zinc-800">
-<div class="h-full rounded-full bg-indigo-400" style="width: {{ process.cpu_percent }}%"></div>
+<span class="font-mono text-white">{{ process.cpu_percent }}%</span>
+<span class="text-zinc-500">Memory</span>
+<span class="font-mono text-white">{{ process.memory_percent }}%</span>
+<span class="text-zinc-500">I/O read</span>
+<span class="font-mono text-white">{{ process.io_read }}</span>
+<span class="text-zinc-500">I/O write</span>
+<span class="font-mono text-white">{{ process.io_write }}</span>
 </div>
-<span class="text-zinc-500">MEM</span>
-<div class="h-1.5 overflow-hidden rounded-full bg-zinc-800">
-<div class="h-full rounded-full bg-emerald-400" style="width: {{ process.memory_percent }}%"></div>
 </div>
-</div>
-</div>
+</li>
 {% endfor %}
+</ol>
+<div class="border-t border-white/10 px-4 py-3">
+<div class="mb-2 flex items-center justify-between text-xs">
+<h3 class="font-medium text-white">Public Listening Ports</h3>
+<span class="text-zinc-500">{{ listening_ports|length }}</span>
+</div>
+<div class="space-y-1 text-xs">
+{% for listener in listening_ports %}
+<div class="grid grid-cols-[1fr_auto] gap-2">
+<span class="truncate font-mono text-zinc-300">{{ listener.protocol }}/{{ listener.host }}:{{ listener.port }}</span>
+<span class="max-w-24 truncate text-zinc-500">{{ listener.process }}</span>
+</div>
+{% else %}
+<p class="text-zinc-500">None</p>
+{% endfor %}
+</div>
 </div>
 </div>
 </section>
