@@ -1,14 +1,26 @@
+from pathlib import Path
+import socket
+import sqlite3
 import subprocess
 import time
 from datetime import timedelta
 
 import psutil
-from flask import Flask, render_template_string
+from flask import Flask, render_template
 
 app = Flask(__name__)
 
 # --- CONFIGURATION ---
 SERVICES_TO_TRACK = ["xmr"]
+HISTORY_SAMPLE_INTERVAL = 10
+HISTORY_LIMIT = 360
+RETENTION_SECONDS = 24 * 60 * 60
+DATA_DIR = Path(__file__).with_name("data")
+DB_PATH = DATA_DIR / "stats.sqlite3"
+
+LAST_NET_SAMPLE = None
+LAST_DISK_SAMPLE = None
+LAST_HISTORY_BUCKET = None
 
 
 def gb(value):
@@ -17,6 +29,285 @@ def gb(value):
 
 def mb(value):
     return round(value / (1024**2), 1)
+
+
+def bytes_per_second(value):
+    units = ["B/s", "KB/s", "MB/s", "GB/s"]
+    size = float(value)
+
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            return f"{size:.1f} {unit}"
+        size /= 1024
+
+
+def init_db():
+    DATA_DIR.mkdir(exist_ok=True)
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS metric_samples (
+                sampled_at INTEGER PRIMARY KEY,
+                cpu_percent REAL NOT NULL,
+                memory_percent REAL NOT NULL,
+                network_bps REAL NOT NULL,
+                network_rx_bps REAL NOT NULL DEFAULT 0,
+                network_tx_bps REAL NOT NULL DEFAULT 0,
+                disk_read_bps REAL NOT NULL,
+                disk_write_bps REAL NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_metric_samples_sampled_at "
+            "ON metric_samples (sampled_at)"
+        )
+
+        columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(metric_samples)").fetchall()
+        }
+        if "network_rx_bps" not in columns:
+            conn.execute(
+                "ALTER TABLE metric_samples "
+                "ADD COLUMN network_rx_bps REAL NOT NULL DEFAULT 0"
+            )
+        if "network_tx_bps" not in columns:
+            conn.execute(
+                "ALTER TABLE metric_samples "
+                "ADD COLUMN network_tx_bps REAL NOT NULL DEFAULT 0"
+            )
+
+
+def prune_old_samples():
+    cutoff = int(time.time()) - RETENTION_SECONDS
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM metric_samples WHERE sampled_at < ?", (cutoff,))
+
+
+def minute_bucket(timestamp=None):
+    timestamp = time.time() if timestamp is None else timestamp
+    return int(timestamp // HISTORY_SAMPLE_INTERVAL) * HISTORY_SAMPLE_INTERVAL
+
+
+def save_metric_sample(
+    cpu_usage,
+    memory_usage,
+    network_bps,
+    network_rx_bps,
+    network_tx_bps,
+    disk_read_bps,
+    disk_write_bps,
+):
+    global LAST_HISTORY_BUCKET
+
+    bucket = minute_bucket()
+    if LAST_HISTORY_BUCKET == bucket:
+        return
+
+    init_db()
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO metric_samples (
+                sampled_at,
+                cpu_percent,
+                memory_percent,
+                network_bps,
+                network_rx_bps,
+                network_tx_bps,
+                disk_read_bps,
+                disk_write_bps
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                bucket,
+                cpu_usage,
+                memory_usage,
+                network_bps,
+                network_rx_bps,
+                network_tx_bps,
+                disk_read_bps,
+                disk_write_bps,
+            ),
+        )
+
+    LAST_HISTORY_BUCKET = bucket
+    prune_old_samples()
+
+
+def graph_points(values, max_value=None):
+    populated_values = [value for value, has_data in values if has_data]
+    scale = max_value or max(populated_values, default=0) or 1
+
+    return [
+        {
+            "value": value,
+            "height": max(4, round((value / scale) * 100)) if has_data else 0,
+            "has_data": has_data,
+        }
+        for value, has_data in values
+    ]
+
+
+def get_metric_history(column, max_value=None):
+    init_db()
+
+    current_bucket = minute_bucket()
+    buckets = [
+        current_bucket - ((HISTORY_LIMIT - 1 - index) * HISTORY_SAMPLE_INTERVAL)
+        for index in range(HISTORY_LIMIT)
+    ]
+
+    with sqlite3.connect(DB_PATH) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT sampled_at, {column}
+            FROM metric_samples
+            WHERE sampled_at >= ?
+            ORDER BY sampled_at
+            """,
+            (buckets[0],),
+        ).fetchall()
+
+    values_by_bucket = {sampled_at: value for sampled_at, value in rows}
+    values = [
+        (values_by_bucket.get(bucket, 0), bucket in values_by_bucket)
+        for bucket in buckets
+    ]
+
+    return graph_points(values, max_value=max_value)
+
+
+def get_network_history():
+    init_db()
+
+    current_bucket = minute_bucket()
+    buckets = [
+        current_bucket - ((HISTORY_LIMIT - 1 - index) * HISTORY_SAMPLE_INTERVAL)
+        for index in range(HISTORY_LIMIT)
+    ]
+
+    with sqlite3.connect(DB_PATH) as conn:
+        rows = conn.execute(
+            """
+            SELECT sampled_at, network_rx_bps, network_tx_bps
+            FROM metric_samples
+            WHERE sampled_at >= ?
+            ORDER BY sampled_at
+            """,
+            (buckets[0],),
+        ).fetchall()
+
+    values_by_bucket = {
+        sampled_at: (rx_bps, tx_bps)
+        for sampled_at, rx_bps, tx_bps in rows
+    }
+    populated_values = [
+        value
+        for bucket in buckets
+        if bucket in values_by_bucket
+        for value in values_by_bucket[bucket]
+    ]
+    scale = max(populated_values, default=0) or 1
+
+    points = []
+    for bucket in buckets:
+        rx_bps, tx_bps = values_by_bucket.get(bucket, (0, 0))
+        has_data = bucket in values_by_bucket
+        points.append(
+            {
+                "rx_height": max(4, round((rx_bps / scale) * 100)) if has_data else 0,
+                "tx_height": max(4, round((tx_bps / scale) * 100)) if has_data else 0,
+                "has_data": has_data,
+            }
+        )
+
+    return points
+
+
+def get_history():
+    return {
+        "cpu_history": get_metric_history("cpu_percent", max_value=100),
+        "memory_history": get_metric_history("memory_percent", max_value=100),
+        "network_history": get_network_history(),
+        "disk_read_history": get_metric_history("disk_read_bps"),
+        "disk_write_history": get_metric_history("disk_write_bps"),
+    }
+
+
+def get_network_usage(net_io):
+    global LAST_NET_SAMPLE
+
+    now = time.monotonic()
+    current_sample = (now, net_io.bytes_recv, net_io.bytes_sent)
+
+    if LAST_NET_SAMPLE is None:
+        LAST_NET_SAMPLE = current_sample
+        return {
+            "rx_rate": 0,
+            "tx_rate": 0,
+            "total_rate": 0,
+            "rx_rate_label": bytes_per_second(0),
+            "tx_rate_label": bytes_per_second(0),
+            "total_rate_label": bytes_per_second(0),
+        }
+
+    last_time, last_recv, last_sent = LAST_NET_SAMPLE
+    elapsed = max(now - last_time, 0.001)
+    rx_rate = max((net_io.bytes_recv - last_recv) / elapsed, 0)
+    tx_rate = max((net_io.bytes_sent - last_sent) / elapsed, 0)
+    total_rate = rx_rate + tx_rate
+
+    LAST_NET_SAMPLE = current_sample
+
+    return {
+        "rx_rate": rx_rate,
+        "tx_rate": tx_rate,
+        "total_rate": total_rate,
+        "rx_rate_label": bytes_per_second(rx_rate),
+        "tx_rate_label": bytes_per_second(tx_rate),
+        "total_rate_label": bytes_per_second(total_rate),
+    }
+
+
+def get_disk_usage(disk_io):
+    global LAST_DISK_SAMPLE
+
+    now = time.monotonic()
+    current_sample = (now, disk_io.read_bytes, disk_io.write_bytes)
+
+    if LAST_DISK_SAMPLE is None:
+        LAST_DISK_SAMPLE = current_sample
+        return {
+            "read_rate": 0,
+            "write_rate": 0,
+            "total_rate": 0,
+            "read_rate_label": bytes_per_second(0),
+            "write_rate_label": bytes_per_second(0),
+            "total_rate_label": bytes_per_second(0),
+        }
+
+    last_time, last_read, last_write = LAST_DISK_SAMPLE
+    elapsed = max(now - last_time, 0.001)
+    read_rate = max((disk_io.read_bytes - last_read) / elapsed, 0)
+    write_rate = max((disk_io.write_bytes - last_write) / elapsed, 0)
+    total_rate = read_rate + write_rate
+
+    LAST_DISK_SAMPLE = current_sample
+
+    return {
+        "read_rate": read_rate,
+        "write_rate": write_rate,
+        "total_rate": total_rate,
+        "read_rate_label": bytes_per_second(read_rate),
+        "write_rate_label": bytes_per_second(write_rate),
+        "total_rate_label": bytes_per_second(total_rate),
+    }
 
 
 def get_uptime():
@@ -72,13 +363,22 @@ def get_disks():
     }
 
     disks = []
+    seen_devices = set()
 
     for part in psutil.disk_partitions(all=False):
         if part.fstype in skip_fs:
             continue
 
+        mountpoint = part.mountpoint.lower()
+        if "/log" in mountpoint or "\\log" in mountpoint:
+            continue
+
+        if part.device in seen_devices:
+            continue
+
         try:
             usage = psutil.disk_usage(part.mountpoint)
+            seen_devices.add(part.device)
 
             disks.append(
                 {
@@ -100,9 +400,38 @@ def get_disks():
     return disks
 
 
-@app.route("/")
-def dashboard():
+def get_top_processes(limit=10):
+    processes = []
 
+    for proc in psutil.process_iter(
+        ["pid", "name", "username", "cpu_percent", "memory_percent"]
+    ):
+        try:
+            info = proc.info
+            processes.append(
+                {
+                    "pid": info["pid"],
+                    "name": info["name"] or "unknown",
+                    "username": info["username"] or "-",
+                    "cpu_percent": round(info["cpu_percent"] or 0, 1),
+                    "memory_percent": round(info["memory_percent"] or 0, 1),
+                }
+            )
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+
+    processes.sort(
+        key=lambda process: (
+            process["cpu_percent"],
+            process["memory_percent"],
+        ),
+        reverse=True,
+    )
+
+    return processes[:limit]
+
+
+def get_dashboard_data():
     cpu_usage = psutil.cpu_percent(interval=0.1)
     cpu_per_core = list(enumerate(psutil.cpu_percent(interval=0.1, percpu=True)))
     cpu_count = psutil.cpu_count()
@@ -114,351 +443,62 @@ def dashboard():
 
     disk_io = psutil.disk_io_counters()
     net_io = psutil.net_io_counters()
+    network_usage = get_network_usage(net_io)
+    disk_usage = get_disk_usage(disk_io)
+    save_metric_sample(
+        cpu_usage,
+        memory.percent,
+        network_usage["total_rate"],
+        network_usage["rx_rate"],
+        network_usage["tx_rate"],
+        disk_usage["read_rate"],
+        disk_usage["write_rate"],
+    )
+    history = get_history()
 
     services_stats = [get_service_status(svc) for svc in SERVICES_TO_TRACK]
-
-    HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>System Dashboard</title>
-<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-<meta http-equiv="refresh" content="5">
-</head>
-
-<body class="bg-slate-900 text-slate-100 min-h-screen font-sans antialiased p-6 md:p-12">
-
-<div class="max-w-7xl mx-auto space-y-8">
-
-<header class="flex flex-col md:flex-row md:items-center md:justify-between border-b border-slate-800 pb-6 gap-4">
-
-<div>
-<h1 class="text-3xl font-bold text-white">System Dashboard</h1>
-<p class="text-sm text-slate-400">
-Lightweight real-time node monitoring
-</p>
-</div>
-
-<div class="bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl">
-
-<span class="text-slate-400 text-sm">
-Uptime
-</span>
-
-<div class="font-mono text-white">
-{{ uptime }}
-</div>
-
-</div>
-
-</header>
-
-
-<section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-
-<div class="bg-slate-800/40 border border-slate-800 rounded-2xl p-6">
-
-<div class="text-sm text-slate-400 uppercase">
-CPU Usage
-</div>
-
-<div class="text-4xl font-bold mt-2">
-{{ cpu_usage }}%
-</div>
-
-<div class="text-xs text-slate-500 mt-1">
-{{ cpu_count }} Logical Cores
-</div>
-
-<div class="w-full bg-slate-700 rounded-full h-2 mt-4 overflow-hidden">
-<div class="bg-indigo-500 h-2 rounded-full"
-style="width: {{ cpu_usage }}%">
-</div>
-</div>
-
-<div class="mt-5 space-y-2">
-
-{% for core, usage in cpu_per_core %}
-
-<div>
-
-<div class="flex justify-between text-xs mb-1">
-
-<span class="text-slate-400">
-Core {{ core }}
-</span>
-
-<span class="text-white">
-{{ usage }}%
-</span>
-
-</div>
-
-<div class="w-full bg-slate-700 rounded-full h-1 overflow-hidden">
-
-<div class="bg-indigo-400 h-1 rounded-full"
-style="width: {{ usage }}%">
-</div>
-
-</div>
-
-</div>
-
-{% endfor %}
-
-</div>
-
-</div>
-
-
-<div class="bg-slate-800/40 border border-slate-800 rounded-2xl p-6">
-
-<div class="text-sm text-slate-400 uppercase">
-RAM Usage
-</div>
-
-<div class="text-4xl font-bold mt-2">
-{{ memory.percent }}%
-</div>
-
-<div class="text-xs text-slate-500 mt-1">
-
-{{ memory_used }} GB /
-{{ memory_total }} GB
-
-</div>
-
-<div class="w-full bg-slate-700 rounded-full h-2 mt-4 overflow-hidden">
-
-<div class="bg-emerald-500 h-2 rounded-full"
-style="width: {{ memory.percent }}%">
-</div>
-
-</div>
-
-{% if has_swap %}
-
-<div class="border-t border-slate-700 mt-5 pt-5">
-
-<div class="text-sm text-slate-400 uppercase">
-Swap
-</div>
-
-<div class="text-2xl font-bold mt-1">
-{{ swap_percent }}%
-</div>
-
-<div class="text-xs text-slate-500">
-
-{{ swap_used }} GB /
-{{ swap_total }} GB
-
-</div>
-
-<div class="w-full bg-slate-700 rounded-full h-2 mt-4 overflow-hidden">
-
-<div class="bg-cyan-500 h-2 rounded-full"
-style="width: {{ swap_percent }}%">
-</div>
-
-</div>
-
-</div>
-
-{% endif %}
-
-</div>
-
-
-<div class="bg-slate-800/40 border border-slate-800 rounded-2xl p-6">
-
-<div class="text-sm text-slate-400 uppercase">
-Accumulated I/O
-</div>
-
-<div class="mt-6 space-y-3 font-mono text-sm">
-
-<div class="flex justify-between">
-<span>Disk Read</span>
-<span>{{ disk_read }} MB</span>
-</div>
-
-<div class="flex justify-between">
-<span>Disk Write</span>
-<span>{{ disk_write }} MB</span>
-</div>
-
-<div class="border-t border-slate-700 pt-3 flex justify-between">
-<span>Network RX</span>
-<span>{{ net_recv }} MB</span>
-</div>
-
-<div class="flex justify-between">
-<span>Network TX</span>
-<span>{{ net_sent }} MB</span>
-</div>
-
-</div>
-
-</div>
-
-</section>
-
-
-<section class="space-y-4">
-
-<h2 class="text-xl font-bold">
-Mounted Storage
-</h2>
-
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-
-{% for disk in mounted_disks %}
-
-<div class="bg-slate-800/30 border border-slate-800 rounded-2xl p-5">
-
-<div class="flex justify-between">
-
-<div>
-
-<div class="font-mono text-white">
-{{ disk.mountpoint }}
-</div>
-
-<div class="text-xs text-slate-500">
-{{ disk.device }}
-</div>
-
-</div>
-
-<div class="text-xs text-slate-500">
-{{ disk.fstype }}
-</div>
-
-</div>
-
-<div class="text-3xl font-bold mt-4">
-{{ disk.percent }}%
-</div>
-
-<div class="text-xs text-slate-500">
-
-{{ disk.used }} GB /
-{{ disk.total }} GB
-
-</div>
-
-<div class="w-full bg-slate-700 rounded-full h-2 mt-4 overflow-hidden">
-
-<div class="bg-amber-500 h-2 rounded-full"
-style="width: {{ disk.percent }}%">
-</div>
-
-</div>
-
-<div class="text-xs text-slate-400 mt-3">
-
-Free: {{ disk.free }} GB
-
-</div>
-
-</div>
-
-{% endfor %}
-
-</div>
-
-</section>
-
-
-<section class="space-y-4">
-
-<h2 class="text-xl font-bold">
-Systemd Managed Services
-</h2>
-
-{% for svc in services %}
-
-<div class="bg-slate-800/30 border border-slate-800 rounded-2xl p-5">
-
-<div class="flex items-center justify-between">
-
-<div class="font-mono text-lg">
-
-{{ svc.name }}
-
-</div>
-
-{% if svc.is_active %}
-
-<div class="text-emerald-400">
-
-● Active
-
-</div>
-
-{% else %}
-
-<div class="text-rose-400">
-
-● {{ svc.status }}
-
-</div>
-
-{% endif %}
-
-</div>
-
-<div class="bg-slate-950 rounded-xl mt-4 p-4 border border-slate-800">
-
-<div class="text-xs text-slate-500 mb-2 uppercase">
-
-Recent Logs
-
-</div>
-
-<pre class="text-xs text-slate-400 whitespace-pre-wrap overflow-x-auto">
-
-{{ svc.logs }}
-
-</pre>
-
-</div>
-
-</div>
-
-{% endfor %}
-
-</section>
-
-</div>
-
-</body>
-</html>
-"""
-
-    return render_template_string(
-        HTML_TEMPLATE,
-        uptime=get_uptime(),
-        cpu_usage=cpu_usage,
-        cpu_per_core=cpu_per_core,
-        cpu_count=cpu_count,
-        memory=memory,
-        memory_used=gb(memory.used),
-        memory_total=gb(memory.total),
-        has_swap=swap.total > 0,
-        swap_total=gb(swap.total),
-        swap_used=gb(swap.used),
-        swap_percent=swap.percent,
-        mounted_disks=mounted_disks,
-        disk_read=mb(disk_io.read_bytes),
-        disk_write=mb(disk_io.write_bytes),
-        net_recv=mb(net_io.bytes_recv),
-        net_sent=mb(net_io.bytes_sent),
-        services=services_stats,
-    )
+    top_processes = get_top_processes()
+
+    return {
+        "uptime": get_uptime(),
+        "hostname": socket.gethostname(),
+        "cpu_usage": cpu_usage,
+        "cpu_per_core": cpu_per_core,
+        "cpu_count": cpu_count,
+        "memory": memory,
+        "memory_used": gb(memory.used),
+        "memory_total": gb(memory.total),
+        "has_swap": swap.total > 0,
+        "swap_total": gb(swap.total),
+        "swap_used": gb(swap.used),
+        "swap_percent": swap.percent,
+        "mounted_disks": mounted_disks,
+        "disk_read": mb(disk_io.read_bytes),
+        "disk_write": mb(disk_io.write_bytes),
+        "disk_read_rate": disk_usage["read_rate_label"],
+        "disk_write_rate": disk_usage["write_rate_label"],
+        "disk_total_rate": disk_usage["total_rate_label"],
+        "net_recv": mb(net_io.bytes_recv),
+        "net_sent": mb(net_io.bytes_sent),
+        "net_rx_rate": network_usage["rx_rate_label"],
+        "net_tx_rate": network_usage["tx_rate_label"],
+        "net_total_rate": network_usage["total_rate_label"],
+        "cpu_history": history["cpu_history"],
+        "memory_history": history["memory_history"],
+        "network_history": history["network_history"],
+        "services": services_stats,
+        "top_processes": top_processes,
+    }
+
+
+@app.route("/")
+def dashboard():
+    return render_template("dashboard.html", hostname=socket.gethostname())
+
+
+@app.route("/stats")
+def stats():
+    return render_template("_stats.html", **get_dashboard_data())
 
 
 if __name__ == "__main__":

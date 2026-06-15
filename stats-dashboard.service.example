@@ -1,0 +1,16 @@
+[Unit]
+Description=System Dashboard Flask App
+After=network.target
+
+[Service]
+Type=simple
+User=your-user
+Group=your-user
+WorkingDirectory=/opt/stats
+Environment=PATH=/opt/stats/.venv/bin
+ExecStart=/opt/stats/.venv/bin/gunicorn --workers 2 --bind 0.0.0.0:5000 app:app
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
