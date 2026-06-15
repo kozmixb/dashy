@@ -1,4 +1,5 @@
 import subprocess
+from datetime import datetime
 
 from src.config import SERVICES_TO_TRACK
 from src.formatting import format_bytes, format_nsec
@@ -25,6 +26,27 @@ def parse_systemd_show(output):
         properties[key] = value
 
     return properties
+
+
+def format_service_uptime(active_since):
+    if not active_since or active_since == "n/a":
+        return "n/a"
+
+    try:
+        started_at = datetime.strptime(active_since.rsplit(" ", 1)[0], "%a %Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return "n/a"
+
+    elapsed = datetime.now() - started_at
+    days = elapsed.days
+    hours, remainder = divmod(elapsed.seconds, 3600)
+    minutes, _ = divmod(remainder, 60)
+
+    if days:
+        return f"{days}d {hours}h {minutes}m"
+    if hours:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"
 
 
 def get_service_status(service_name):
@@ -76,6 +98,7 @@ def get_service_status(service_name):
         "memory_current": format_bytes(memory_current),
         "cpu_time": format_nsec(cpu_usage_nsec),
         "active_since": active_since,
+        "uptime": format_service_uptime(active_since),
         "logs": logs if logs else "No logs available.",
     }
 

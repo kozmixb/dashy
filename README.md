@@ -1,12 +1,25 @@
 # System Dashboard
 
-A small Flask dashboard for local system metrics, mounted storage, network and disk I/O, and selected systemd service logs.
+A lightweight Flask and HTMX dashboard for monitoring a Linux host from a browser. It is built for small servers, home lab machines, nodes, and services where you want a quick read on system health without installing a full observability stack.
+
+The dashboard shows CPU, memory, network throughput, storage usage, disk I/O, selected systemd service state, recent service logs, and top resource-heavy processes. It stores short-term metric history locally in SQLite so the graphs remain useful across refreshes while keeping the setup simple and self-contained.
+
+![System Dashboard screenshot](dash.png)
+
+## Why Use It
+
+- Quick browser-based view of a Linux machine
+- No external database, agent, or hosted monitoring service required
+- HTMX updates keep the dashboard live without full page reloads
+- Useful for checking service health, resource usage, and recent logs in one place
+- Small enough to run directly on the server it monitors
 
 ## Requirements
 
 - Python 3.10+
 - Linux with systemd for service status and journal output
 - Access to `systemctl` and `journalctl`
+- A modern browser
 
 ## Local Setup
 
@@ -47,6 +60,8 @@ Update that list with the systemd unit names you want displayed.
 
 Metric history is stored in a local SQLite database at `data/stats.sqlite3`.
 The app keeps one sample every 10 seconds and deletes samples older than one day.
+
+The SQLite database is ignored by Git so runtime metric data is not committed.
 
 ## Running With Gunicorn
 
