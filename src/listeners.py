@@ -15,6 +15,13 @@ def is_public_ipv4(address):
     return ip_address.version == 4 and not ip_address.is_loopback
 
 
+def format_listener_address(host, port):
+    if host == "0.0.0.0":
+        return f":{port}"
+
+    return f"{host}:{port}"
+
+
 def get_public_listeners():
     listeners = []
     seen = set()
@@ -59,6 +66,7 @@ def get_public_listeners():
                 "protocol": protocol,
                 "host": host,
                 "port": port,
+                "display_address": format_listener_address(host, port),
                 "process": process_name,
             }
         )

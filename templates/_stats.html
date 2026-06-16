@@ -7,7 +7,9 @@
 <span><span class="text-zinc-500">IP</span> {{ primary_ip }}</span>
 </div>
 </div>
-<label class="flex cursor-pointer select-none items-center gap-2 text-xs text-zinc-400">
+<div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-zinc-400">
+<span><span class="text-zinc-500">Last refreshed</span> <span id="last-refreshed-at">--:--:--</span></span>
+<label class="flex cursor-pointer select-none items-center gap-2">
 <input id="refresh-toggle" type="checkbox" class="peer sr-only" checked>
 <span class="refresh-dot h-2 w-2 rounded-full"></span>
 <span>Live metrics</span>
@@ -15,6 +17,7 @@
 <span class="refresh-thumb absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white"></span>
 </span>
 </label>
+</div>
 </header>
 
 <section class="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-4">
@@ -291,22 +294,33 @@
 </div>
 
 <div class="min-w-0 rounded-lg border border-white/10 bg-white/[0.03]">
-<div class="border-b border-white/10 px-4 py-3">
-<div class="flex items-center justify-between text-xs">
+<div class="flex items-center justify-between border-b border-white/10 px-4 py-3">
 <h2 class="text-sm font-medium text-white">Listeners</h2>
-<span class="text-zinc-500">{{ listening_ports|length }}</span>
+<span class="text-xs text-zinc-500">{{ listening_ports|length }}</span>
 </div>
-</div>
-<div class="max-h-28 space-y-1 overflow-auto p-4 pr-1 text-xs">
+<ol class="divide-y divide-white/10">
 {% for listener in listening_ports %}
-<div class="grid grid-cols-[1fr_auto] gap-2">
-<span class="truncate font-mono text-zinc-300">{{ listener.protocol }}/{{ listener.host }}:{{ listener.port }}</span>
-<span class="max-w-24 truncate text-zinc-500">{{ listener.process }}</span>
+<li class="group relative grid grid-cols-[2rem_1fr_auto] items-center gap-2 px-4 py-2 text-sm">
+<span class="font-mono text-xs uppercase text-zinc-500">{{ listener.protocol }}</span>
+<span class="min-w-0 truncate font-medium text-white">{{ listener.display_address }}</span>
+<span class="max-w-28 truncate text-xs text-zinc-500">{{ listener.process }}</span>
+<div class="pointer-events-none absolute right-3 top-full z-30 mt-2 hidden w-64 rounded-md border border-white/10 bg-zinc-950 p-3 text-xs text-zinc-300 shadow-xl group-hover:block">
+<div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+<span class="text-zinc-500">Protocol</span>
+<span class="font-mono uppercase text-white">{{ listener.protocol }}</span>
+<span class="text-zinc-500">Address</span>
+<span class="font-mono text-white">{{ listener.host }}</span>
+<span class="text-zinc-500">Port</span>
+<span class="font-mono text-white">{{ listener.port }}</span>
+<span class="text-zinc-500">Process</span>
+<span class="font-mono text-white">{{ listener.process }}</span>
 </div>
+</div>
+</li>
 {% else %}
-<p class="text-zinc-500">None</p>
+<li class="px-4 py-2 text-sm text-zinc-500">None</li>
 {% endfor %}
-</div>
+</ol>
 </div>
 </div>
 </div>

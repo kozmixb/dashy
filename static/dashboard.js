@@ -1,6 +1,24 @@
 const refreshIntervalMs = 30000;
 let refreshEnabled = true;
 let refreshTimer = null;
+let lastRefreshedAt = null;
+
+function formatRefreshTime(date) {
+    return date.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+    });
+}
+
+function syncLastRefreshedAt() {
+    const timestamp = document.getElementById("last-refreshed-at");
+    if (!timestamp || !lastRefreshedAt) {
+        return;
+    }
+
+    timestamp.textContent = formatRefreshTime(lastRefreshedAt);
+}
 
 function syncRefreshToggle() {
     const toggle = document.getElementById("refresh-toggle");
@@ -9,6 +27,11 @@ function syncRefreshToggle() {
     }
 
     toggle.checked = refreshEnabled;
+}
+
+function syncHeaderControls() {
+    syncRefreshToggle();
+    syncLastRefreshedAt();
 }
 
 function refreshStats() {
@@ -41,7 +64,14 @@ document.addEventListener("change", (event) => {
     scheduleRefresh();
 });
 
-document.body.addEventListener("htmx:afterSwap", syncRefreshToggle);
+document.body.addEventListener("htmx:afterSwap", (event) => {
+    if (event.detail.target.id !== "stats") {
+        return;
+    }
+
+    lastRefreshedAt = new Date();
+    syncHeaderControls();
+});
 
 refreshStats();
 scheduleRefresh();
