@@ -4,8 +4,13 @@ from datetime import timedelta
 
 import psutil
 
+from src.cache import TtlCache
+from src.config import HOST_CACHE_SECONDS
 
-def get_primary_ip():
+PRIMARY_IP_CACHE = TtlCache(HOST_CACHE_SECONDS)
+
+
+def collect_primary_ip():
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             sock.connect(("8.8.8.8", 80))
@@ -19,6 +24,10 @@ def get_primary_ip():
                 return address.address
 
     return "n/a"
+
+
+def get_primary_ip():
+    return PRIMARY_IP_CACHE.get(collect_primary_ip)
 
 
 def get_uptime():

@@ -1,4 +1,5 @@
 import sqlite3
+import threading
 import time
 
 from src.config import (
@@ -11,6 +12,8 @@ from src.config import (
 from src.formatting import format_bytes_per_second, format_percent
 
 LAST_SAVED_SAMPLE_TIMESTAMP = None
+DB_INITIALIZED = False
+DB_INIT_LOCK = threading.Lock()
 
 
 def connect_db():
@@ -20,43 +23,54 @@ def connect_db():
 
 
 def init_db():
+    global DB_INITIALIZED
+
+    if DB_INITIALIZED:
+        return
+
     DATA_DIR.mkdir(exist_ok=True)
 
-    with connect_db() as conn:
-        conn.execute("PRAGMA journal_mode = WAL")
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS metric_samples (
-                sampled_at INTEGER PRIMARY KEY,
-                cpu_percent REAL NOT NULL,
-                memory_percent REAL NOT NULL,
-                network_bps REAL NOT NULL,
-                network_rx_bps REAL NOT NULL DEFAULT 0,
-                network_tx_bps REAL NOT NULL DEFAULT 0,
-                disk_read_bps REAL NOT NULL,
-                disk_write_bps REAL NOT NULL
-            )
-            """
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_metric_samples_sampled_at "
-            "ON metric_samples (sampled_at)"
-        )
+    with DB_INIT_LOCK:
+        if DB_INITIALIZED:
+            return
 
-        columns = {
-            row[1]
-            for row in conn.execute("PRAGMA table_info(metric_samples)").fetchall()
-        }
-        if "network_rx_bps" not in columns:
+        with connect_db() as conn:
+            conn.execute("PRAGMA journal_mode = WAL")
             conn.execute(
-                "ALTER TABLE metric_samples "
-                "ADD COLUMN network_rx_bps REAL NOT NULL DEFAULT 0"
+                """
+                CREATE TABLE IF NOT EXISTS metric_samples (
+                    sampled_at INTEGER PRIMARY KEY,
+                    cpu_percent REAL NOT NULL,
+                    memory_percent REAL NOT NULL,
+                    network_bps REAL NOT NULL,
+                    network_rx_bps REAL NOT NULL DEFAULT 0,
+                    network_tx_bps REAL NOT NULL DEFAULT 0,
+                    disk_read_bps REAL NOT NULL,
+                    disk_write_bps REAL NOT NULL
+                )
+                """
             )
-        if "network_tx_bps" not in columns:
             conn.execute(
-                "ALTER TABLE metric_samples "
-                "ADD COLUMN network_tx_bps REAL NOT NULL DEFAULT 0"
+                "CREATE INDEX IF NOT EXISTS idx_metric_samples_sampled_at "
+                "ON metric_samples (sampled_at)"
             )
+
+            columns = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(metric_samples)").fetchall()
+            }
+            if "network_rx_bps" not in columns:
+                conn.execute(
+                    "ALTER TABLE metric_samples "
+                    "ADD COLUMN network_rx_bps REAL NOT NULL DEFAULT 0"
+                )
+            if "network_tx_bps" not in columns:
+                conn.execute(
+                    "ALTER TABLE metric_samples "
+                    "ADD COLUMN network_tx_bps REAL NOT NULL DEFAULT 0"
+                )
+
+        DB_INITIALIZED = True
 
 
 def prune_old_samples():
@@ -182,22 +196,14 @@ def history_sample_timestamps():
     ]
 
 
-def get_metric_history(column, max_value=None, label_formatter=None):
-    init_db()
+def get_metric_history_from_rows(
+    rows,
+    column_index,
+    max_value=None,
+    label_formatter=None,
+):
     sample_timestamps = history_sample_timestamps()
-
-    with connect_db() as conn:
-        rows = conn.execute(
-            f"""
-            SELECT sampled_at, {column}
-            FROM metric_samples
-            WHERE sampled_at >= ?
-            ORDER BY sampled_at
-            """,
-            (sample_timestamps[0],),
-        ).fetchall()
-
-    values_by_sample = {sampled_at: value for sampled_at, value in rows}
+    values_by_sample = {row[0]: row[column_index] for row in rows}
     values = [
         (values_by_sample.get(sampled_at, 0), sampled_at in values_by_sample)
         for sampled_at in sample_timestamps
@@ -211,25 +217,10 @@ def get_metric_history(column, max_value=None, label_formatter=None):
     )
 
 
-def get_network_history():
-    init_db()
+def get_network_history_from_rows(rows):
     sample_timestamps = history_sample_timestamps()
 
-    with connect_db() as conn:
-        rows = conn.execute(
-            """
-            SELECT sampled_at, network_rx_bps, network_tx_bps
-            FROM metric_samples
-            WHERE sampled_at >= ?
-            ORDER BY sampled_at
-            """,
-            (sample_timestamps[0],),
-        ).fetchall()
-
-    values_by_sample = {
-        sampled_at: (rx_bps, tx_bps)
-        for sampled_at, rx_bps, tx_bps in rows
-    }
+    values_by_sample = {row[0]: (row[3], row[4]) for row in rows}
     values = [
         (values_by_sample.get(sampled_at, (0, 0)), sampled_at in values_by_sample)
         for sampled_at in sample_timestamps
@@ -263,14 +254,35 @@ def get_network_history():
 
 
 def get_chart_history():
+    init_db()
+    sample_timestamps = history_sample_timestamps()
+
+    with connect_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                sampled_at,
+                cpu_percent,
+                memory_percent,
+                network_rx_bps,
+                network_tx_bps
+            FROM metric_samples
+            WHERE sampled_at >= ?
+            ORDER BY sampled_at
+            """,
+            (sample_timestamps[0],),
+        ).fetchall()
+
     return {
-        "cpu_history": get_metric_history(
-            "cpu_percent",
+        "cpu_history": get_metric_history_from_rows(
+            rows,
+            1,
             label_formatter=format_percent,
         ),
-        "memory_history": get_metric_history(
-            "memory_percent",
+        "memory_history": get_metric_history_from_rows(
+            rows,
+            2,
             label_formatter=format_percent,
         ),
-        "network_history": get_network_history(),
+        "network_history": get_network_history_from_rows(rows),
     }

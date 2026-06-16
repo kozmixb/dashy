@@ -13,8 +13,8 @@ from src.storage import get_mounted_disks
 
 
 def get_dashboard_data():
-    cpu_usage = psutil.cpu_percent(interval=0.1)
-    cpu_per_core = list(enumerate(psutil.cpu_percent(interval=0.1, percpu=True)))
+    cpu_usage = psutil.cpu_percent(interval=None)
+    cpu_per_core = list(enumerate(psutil.cpu_percent(interval=None, percpu=True)))
     cpu_count = psutil.cpu_count()
 
     memory = psutil.virtual_memory()

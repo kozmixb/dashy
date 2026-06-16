@@ -1,8 +1,15 @@
 import subprocess
 from datetime import datetime
 
-from src.config import SERVICE_COMMAND_TIMEOUT_SECONDS, SERVICES_TO_TRACK
+from src.cache import TtlCache
+from src.config import (
+    SERVICE_CACHE_SECONDS,
+    SERVICE_COMMAND_TIMEOUT_SECONDS,
+    SERVICES_TO_TRACK,
+)
 from src.formatting import format_bytes
+
+SERVICE_CACHE = TtlCache(SERVICE_CACHE_SECONDS)
 
 
 def parse_systemd_value(value):
@@ -107,4 +114,6 @@ def get_service_status(service_name):
 
 
 def get_tracked_services_status():
-    return [get_service_status(svc) for svc in SERVICES_TO_TRACK]
+    return SERVICE_CACHE.get(
+        lambda: [get_service_status(svc) for svc in SERVICES_TO_TRACK]
+    )

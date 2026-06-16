@@ -1,9 +1,13 @@
 import psutil
 
+from src.cache import TtlCache
+from src.config import DISK_CACHE_SECONDS
 from src.formatting import format_bytes
 
+DISK_CACHE = TtlCache(DISK_CACHE_SECONDS)
 
-def get_mounted_disks():
+
+def collect_mounted_disks():
     skip_fs = {
         "tmpfs",
         "devtmpfs",
@@ -59,3 +63,7 @@ def get_mounted_disks():
     disks.sort(key=lambda d: d["mountpoint"])
 
     return disks
+
+
+def get_mounted_disks():
+    return DISK_CACHE.get(collect_mounted_disks)

@@ -3,7 +3,10 @@ import socket
 
 import psutil
 
-from src.config import HIDDEN_LISTENER_PORTS
+from src.cache import TtlCache
+from src.config import HIDDEN_LISTENER_PORTS, LISTENERS_CACHE_SECONDS
+
+LISTENERS_CACHE = TtlCache(LISTENERS_CACHE_SECONDS)
 
 
 def is_public_ipv4(address):
@@ -22,7 +25,7 @@ def format_listener_address(host, port):
     return f"{host}:{port}"
 
 
-def get_public_listeners():
+def collect_public_listeners():
     listeners = []
     seen = set()
 
@@ -79,3 +82,7 @@ def get_public_listeners():
         )
     )
     return listeners
+
+
+def get_public_listeners():
+    return LISTENERS_CACHE.get(collect_public_listeners)
