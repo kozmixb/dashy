@@ -7,10 +7,14 @@
 <span><span class="text-zinc-500">IP</span> {{ primary_ip }}</span>
 </div>
 </div>
-<div class="flex items-center gap-2 text-xs text-zinc-400">
-<span class="h-2 w-2 rounded-full bg-emerald-400"></span>
+<label class="flex cursor-pointer select-none items-center gap-2 text-xs text-zinc-400">
+<input id="refresh-toggle" type="checkbox" class="peer sr-only" checked>
+<span class="refresh-dot h-2 w-2 rounded-full"></span>
 <span>Live metrics</span>
-</div>
+<span class="refresh-switch relative h-5 w-9 rounded-full">
+<span class="refresh-thumb absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white"></span>
+</span>
+</label>
 </header>
 
 <section class="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-4">
@@ -60,7 +64,7 @@
 <div>
 <div class="flex justify-between text-xs">
 <span class="text-zinc-500">RAM</span>
-<span class="font-mono text-zinc-300">{{ memory_used }} / {{ memory_total }} GB</span>
+<span class="font-mono text-zinc-300">{{ memory_used }} / {{ memory_total }}</span>
 </div>
 <div class="mt-2 h-2 overflow-hidden rounded-full bg-zinc-800">
 <div class="h-full rounded-full bg-emerald-400" style="width: {{ memory.percent }}%"></div>
@@ -71,7 +75,7 @@
 <div>
 <div class="flex justify-between text-xs">
 <span class="text-zinc-500">Swap</span>
-<span class="font-mono text-zinc-300">{{ swap_used }} / {{ swap_total }} GB</span>
+<span class="font-mono text-zinc-300">{{ swap_used }} / {{ swap_total }}</span>
 </div>
 <div class="mt-2 h-2 overflow-hidden rounded-full bg-zinc-800">
 <div class="h-full rounded-full bg-cyan-400" style="width: {{ swap_percent }}%"></div>
@@ -117,16 +121,16 @@
 <dd class="mt-1 font-mono text-xl text-white">{{ net_tx_rate }}</dd>
 </div>
 </dl>
-<div class="grid grid-cols-2 gap-4 border-t border-white/10 pt-3 text-xs">
+<dl class="grid grid-cols-2 gap-4 border-t border-white/10 pt-3 text-xs">
 <div>
-<span class="text-zinc-500">Total RX</span>
-<p class="mt-1 font-mono text-zinc-300">{{ net_recv }} MB</p>
+<dt class="h-4 leading-4 text-zinc-500">Total RX</dt>
+<dd class="mt-1 h-5 font-mono leading-5 text-zinc-300">{{ net_recv }}</dd>
 </div>
 <div>
-<span class="text-zinc-500">Total TX</span>
-<p class="mt-1 font-mono text-zinc-300">{{ net_sent }} MB</p>
+<dt class="h-4 leading-4 text-zinc-500">Total TX</dt>
+<dd class="mt-1 h-5 font-mono leading-5 text-zinc-300">{{ net_sent }}</dd>
 </div>
-</div>
+</dl>
 <div class="mt-auto border-t border-white/10 pt-3">
 <div class="mb-2 flex items-center justify-between text-xs">
 <span class="text-zinc-500">Network history, 10m</span>
@@ -170,16 +174,16 @@
 <dd class="mt-1 font-mono text-xl text-white">{{ disk_write_rate }}</dd>
 </div>
 </dl>
-<div class="grid grid-cols-2 gap-4 border-t border-white/10 pt-3 text-xs">
+<dl class="grid grid-cols-2 gap-4 border-t border-white/10 pt-3 text-xs">
 <div>
-<span class="text-zinc-500">Total read</span>
-<p class="mt-1 font-mono text-zinc-300">{{ disk_read }} MB</p>
+<dt class="h-4 leading-4 text-zinc-500">Total read</dt>
+<dd class="mt-1 h-5 font-mono leading-5 text-zinc-300">{{ disk_read }}</dd>
 </div>
 <div>
-<span class="text-zinc-500">Total write</span>
-<p class="mt-1 font-mono text-zinc-300">{{ disk_write }} MB</p>
+<dt class="h-4 leading-4 text-zinc-500">Total write</dt>
+<dd class="mt-1 h-5 font-mono leading-5 text-zinc-300">{{ disk_write }}</dd>
 </div>
-</div>
+</dl>
 <div class="mt-auto border-t border-white/10 pt-3">
 <div class="mb-1.5 flex items-center justify-between text-xs">
 <span class="text-zinc-500">Mounted devices</span>

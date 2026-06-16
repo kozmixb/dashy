@@ -34,10 +34,15 @@ def sampler_loop():
     while True:
         try:
             collect_metric_sample()
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"Metric sampler skipped a sample: {exc}", flush=True)
 
-        time.sleep(HISTORY_SAMPLE_INTERVAL_SECONDS)
+        now = time.time()
+        next_sample_at = (
+            (int(now // HISTORY_SAMPLE_INTERVAL_SECONDS) + 1)
+            * HISTORY_SAMPLE_INTERVAL_SECONDS
+        )
+        time.sleep(max(0.1, next_sample_at - now + 0.2))
 
 
 def start_background_sampler():

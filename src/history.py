@@ -13,10 +13,17 @@ from src.formatting import format_bytes_per_second, format_percent
 LAST_SAVED_SAMPLE_TIMESTAMP = None
 
 
+def connect_db():
+    conn = sqlite3.connect(DB_PATH, timeout=10)
+    conn.execute("PRAGMA busy_timeout = 10000")
+    return conn
+
+
 def init_db():
     DATA_DIR.mkdir(exist_ok=True)
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with connect_db() as conn:
+        conn.execute("PRAGMA journal_mode = WAL")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS metric_samples (
@@ -55,7 +62,7 @@ def init_db():
 def prune_old_samples():
     cutoff = int(time.time()) - HISTORY_RETENTION_SECONDS
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with connect_db() as conn:
         conn.execute("DELETE FROM metric_samples WHERE sampled_at < ?", (cutoff,))
 
 
@@ -84,10 +91,10 @@ def save_history_sample(
 
     init_db()
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with connect_db() as conn:
         conn.execute(
             """
-            INSERT OR IGNORE INTO metric_samples (
+            INSERT INTO metric_samples (
                 sampled_at,
                 cpu_percent,
                 memory_percent,
@@ -98,6 +105,14 @@ def save_history_sample(
                 disk_write_bps
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(sampled_at) DO UPDATE SET
+                cpu_percent = excluded.cpu_percent,
+                memory_percent = excluded.memory_percent,
+                network_bps = excluded.network_bps,
+                network_rx_bps = excluded.network_rx_bps,
+                network_tx_bps = excluded.network_tx_bps,
+                disk_read_bps = excluded.disk_read_bps,
+                disk_write_bps = excluded.disk_write_bps
             """,
             (
                 sampled_at,
@@ -131,8 +146,35 @@ def graph_points(values, max_value=None, label_formatter=None):
     ]
 
 
+def fill_short_gaps(values, max_gap=2):
+    filled_values = list(values)
+    index = 0
+
+    while index < len(filled_values):
+        value, has_data = filled_values[index]
+        if has_data:
+            index += 1
+            continue
+
+        gap_start = index
+        while index < len(filled_values) and not filled_values[index][1]:
+            index += 1
+
+        gap_length = index - gap_start
+        has_previous = gap_start > 0 and filled_values[gap_start - 1][1]
+        has_next = index < len(filled_values) and filled_values[index][1]
+        if not has_previous or not has_next or gap_length > max_gap:
+            continue
+
+        previous_value = filled_values[gap_start - 1][0]
+        for gap_index in range(gap_start, index):
+            filled_values[gap_index] = (previous_value, True)
+
+    return filled_values
+
+
 def history_sample_timestamps():
-    current_sample = sample_timestamp()
+    current_sample = sample_timestamp(time.time() - HISTORY_SAMPLE_INTERVAL_SECONDS)
     return [
         current_sample
         - ((HISTORY_POINT_COUNT - 1 - index) * HISTORY_SAMPLE_INTERVAL_SECONDS)
@@ -144,7 +186,7 @@ def get_metric_history(column, max_value=None, label_formatter=None):
     init_db()
     sample_timestamps = history_sample_timestamps()
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with connect_db() as conn:
         rows = conn.execute(
             f"""
             SELECT sampled_at, {column}
@@ -160,6 +202,7 @@ def get_metric_history(column, max_value=None, label_formatter=None):
         (values_by_sample.get(sampled_at, 0), sampled_at in values_by_sample)
         for sampled_at in sample_timestamps
     ]
+    values = fill_short_gaps(values)
 
     return graph_points(
         values,
@@ -172,7 +215,7 @@ def get_network_history():
     init_db()
     sample_timestamps = history_sample_timestamps()
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with connect_db() as conn:
         rows = conn.execute(
             """
             SELECT sampled_at, network_rx_bps, network_tx_bps
@@ -187,18 +230,21 @@ def get_network_history():
         sampled_at: (rx_bps, tx_bps)
         for sampled_at, rx_bps, tx_bps in rows
     }
+    values = [
+        (values_by_sample.get(sampled_at, (0, 0)), sampled_at in values_by_sample)
+        for sampled_at in sample_timestamps
+    ]
+    values = fill_short_gaps(values)
     populated_values = [
         value
-        for sampled_at in sample_timestamps
-        if sampled_at in values_by_sample
-        for value in values_by_sample[sampled_at]
+        for sample_values, has_data in values
+        if has_data
+        for value in sample_values
     ]
     scale = max(populated_values, default=0) or 1
 
     points = []
-    for sampled_at in sample_timestamps:
-        rx_bps, tx_bps = values_by_sample.get(sampled_at, (0, 0))
-        has_data = sampled_at in values_by_sample
+    for (rx_bps, tx_bps), has_data in values:
         points.append(
             {
                 "rx_height": max(4, round((rx_bps / scale) * 100)) if has_data else 0,

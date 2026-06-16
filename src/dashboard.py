@@ -2,7 +2,7 @@ import socket
 
 import psutil
 
-from src.formatting import gib, mib
+from src.formatting import format_bytes_short
 from src.history import get_chart_history
 from src.host import get_primary_ip, get_uptime
 from src.listeners import get_public_listeners
@@ -35,20 +35,20 @@ def get_dashboard_data():
         "cpu_per_core": cpu_per_core,
         "cpu_count": cpu_count,
         "memory": memory,
-        "memory_used": gib(memory.used),
-        "memory_total": gib(memory.total),
+        "memory_used": format_bytes_short(memory.used),
+        "memory_total": format_bytes_short(memory.total),
         "has_swap": swap.total > 0,
-        "swap_total": gib(swap.total),
-        "swap_used": gib(swap.used),
+        "swap_total": format_bytes_short(swap.total),
+        "swap_used": format_bytes_short(swap.used),
         "swap_percent": swap.percent,
         "mounted_disks": mounted_disks,
-        "disk_read": mib(disk_io.read_bytes),
-        "disk_write": mib(disk_io.write_bytes),
+        "disk_read": format_bytes_short(disk_io.read_bytes),
+        "disk_write": format_bytes_short(disk_io.write_bytes),
         "disk_read_rate": disk_throughput["read_rate_label"],
         "disk_write_rate": disk_throughput["write_rate_label"],
         "disk_total_rate": disk_throughput["total_rate_label"],
-        "net_recv": mib(net_io.bytes_recv),
-        "net_sent": mib(net_io.bytes_sent),
+        "net_recv": format_bytes_short(net_io.bytes_recv),
+        "net_sent": format_bytes_short(net_io.bytes_sent),
         "net_rx_rate": network_throughput["rx_rate_label"],
         "net_tx_rate": network_throughput["tx_rate_label"],
         "net_total_rate": network_throughput["total_rate_label"],
