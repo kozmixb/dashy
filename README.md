@@ -76,6 +76,85 @@ source .venv/bin/activate
 gunicorn --workers 2 --bind 0.0.0.0:5000 app:app
 ```
 
+## Running With Docker
+
+Build the image locally:
+
+```bash
+docker build -t stats-dashboard .
+```
+
+Create a persistent volume for SQLite metric history:
+
+```bash
+docker volume create stats-data
+```
+
+Run it with Docker only:
+
+```bash
+docker run -d \
+  --name stats-dashboard \
+  --restart unless-stopped \
+  -p 5000:5000 \
+  -v stats-data:/app/data \
+  --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+  --cap-drop ALL \
+  --security-opt no-new-privileges:true \
+  stats-dashboard
+```
+
+Open:
+
+```text
+http://localhost:5000
+```
+
+View logs:
+
+```bash
+docker logs -f stats-dashboard
+```
+
+Stop and remove the container:
+
+```bash
+docker stop stats-dashboard
+docker rm stats-dashboard
+```
+
+Or use Docker Compose instead:
+
+```bash
+docker compose up --build
+```
+
+The image is based on Alpine Linux, runs as an unprivileged user, and stores
+metric history in `/app/data`. The Docker and Compose examples add hardening
+defaults such as a read-only root filesystem, dropped Linux capabilities,
+`no-new-privileges`, and a tmpfs-backed `/tmp`.
+
+Containers generally see container-scoped process and network information. If
+you need full host-level service state and journal output, run the app directly
+on the host with systemd access instead of inside Docker.
+
+## Docker Hub Releases
+
+Publishing to Docker Hub is handled by GitHub Actions when a GitHub release is
+published. Configure these repository secrets first:
+
+```text
+DOCKERHUB_USERNAME
+DOCKERHUB_TOKEN
+```
+
+Release images are published to:
+
+```text
+DOCKERHUB_USERNAME/<github-repository-name>
+```
+
 ## systemd Service
 
 An example unit file is provided at `stats-dashboard.service.example`.

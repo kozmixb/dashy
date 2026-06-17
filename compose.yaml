@@ -1,0 +1,19 @@
+services:
+  stats-dashboard:
+    build: .
+    image: stats-dashboard:local
+    ports:
+      - "5000:5000"
+    volumes:
+      - stats-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+volumes:
+  stats-data:
