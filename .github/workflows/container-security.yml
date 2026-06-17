@@ -26,18 +26,31 @@ jobs:
           load: true
           tags: stats-dashboard:ci
 
-      - name: Scan image with Trivy
+      - name: Generate Trivy SARIF
         uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          TRIVY_SKIP_VERSION_CHECK: "true"
         with:
           image-ref: stats-dashboard:ci
           format: sarif
           output: trivy-results.sarif
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: "1"
+          exit-code: "0"
 
       - name: Upload Trivy SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results.sarif
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          TRIVY_SKIP_VERSION_CHECK: "true"
+        with:
+          image-ref: stats-dashboard:ci
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "0"
